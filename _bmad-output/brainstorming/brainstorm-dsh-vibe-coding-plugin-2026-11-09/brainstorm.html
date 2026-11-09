@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>仪表盘与刹车片 · 一次关于 Vibe Coding 插件的头脑风暴</title>
+<style>
+:root{
+  --mono:ui-monospace,'Cascadia Mono','JetBrains Mono',Consolas,'Courier New',monospace;
+  --sans:'Segoe UI',system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+}
+html[data-theme='dark']{
+  --bg:#070b11; --bg2:#0b1220; --panel:#0d1522; --panel2:#111b2b;
+  --line:#1b2843; --line2:#26365a;
+  --tx:#d7e2f0; --dim:#8595ad; --faint:#54637c;
+  --cyan:#3fd0e0; --amber:#f0a83f; --green:#3fd68f; --red:#ff5f6d; --violet:#a78bfa;
+  --grid:rgba(90,120,170,.07);
+  --shadow:0 12px 40px rgba(0,0,0,.45);
+}
+html[data-theme='light']{
+  --bg:#eef2f7; --bg2:#e2e9f2; --panel:#ffffff; --panel2:#f4f7fb;
+  --line:#ccd7e4; --line2:#b3c2d6;
+  --tx:#17253a; --dim:#51617a; --faint:#8494ab;
+  --cyan:#0b8ea3; --amber:#b5710c; --green:#0c9663; --red:#d13846; --violet:#6d4fc4;
+  --grid:rgba(60,90,140,.08);
+  --shadow:0 10px 30px rgba(30,50,80,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg); color:var(--tx); font-family:var(--sans);
+  font-size:16px; line-height:1.75;
+  background-image:
+    linear-gradient(var(--grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:44px 44px;
+}
+::selection{background:var(--cyan);color:var(--bg)}
+a{color:var(--cyan);text-decoration:none}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+section{padding:64px 0 48px;border-top:1px solid var(--line)}
+section:first-of-type{border-top:none}
+h2{font-size:clamp(22px,3.4vw,30px);letter-spacing:.02em;margin-bottom:8px;font-weight:700}
+h2 .secnum{font-family:var(--mono);color:var(--cyan);font-size:.72em;vertical-align:middle;margin-right:10px;letter-spacing:.08em}
+.secsub{color:var(--dim);font-size:14.5px;margin-bottom:34px;font-family:var(--mono)}
+h3{font-size:18px;margin:26px 0 12px;font-weight:650}
+p{margin-bottom:12px}
+.dim{color:var(--dim)} .mono{font-family:var(--mono)}
+.tag{display:inline-block;font-family:var(--mono);font-size:12px;letter-spacing:.06em;border:1px solid var(--line2);border-radius:3px;padding:1px 8px;color:var(--dim);vertical-align:middle}
+.tag.cyan{color:var(--cyan);border-color:var(--cyan)}
+.tag.amber{color:var(--amber);border-color:var(--amber)}
+.tag.green{color:var(--green);border-color:var(--green)}
+.tag.red{color:var(--red);border-color:var(--red)}
+.tag.violet{color:var(--violet);border-color:var(--violet)}
+code,.kbd{font-family:var(--mono);font-size:.88em;background:var(--panel2);border:1px solid var(--line);border-radius:3px;padding:1px 6px;color:var(--cyan)}
+
+/* ===== progress + nav ===== */
+#prog{position:fixed;top:0;left:0;height:2px;background:linear-gradient(90deg,var(--cyan),var(--violet));z-index:60;width:0;box-shadow:0 0 8px var(--cyan)}
+header.topnav{
+  position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 84%,transparent);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+}
+.navrow{display:flex;align-items:center;gap:12px;padding:10px 0;overflow-x:auto;scrollbar-width:none}
+.navrow::-webkit-scrollbar{display:none}
+.navrow .brand{font-family:var(--mono);font-size:13px;color:var(--cyan);white-space:nowrap;letter-spacing:.06em;margin-right:6px}
+.navrow a{font-family:var(--mono);font-size:12.5px;color:var(--dim);white-space:nowrap;padding:3px 9px;border:1px solid transparent;border-radius:4px;transition:.2s}
+.navrow a:hover{color:var(--tx)}
+.navrow a.active{color:var(--cyan);border-color:var(--line2);background:var(--panel)}
+#themeBtn{margin-left:auto;flex:none;font-family:var(--mono);font-size:12px;color:var(--tx);background:var(--panel);border:1px solid var(--line2);border-radius:4px;padding:4px 10px;cursor:pointer}
+#themeBtn:hover{border-color:var(--cyan)}
+
+/* ===== hero ===== */
+#hero{padding:76px 0 56px;position:relative;overflow:hidden}
+#scope{position:absolute;inset:0;pointer-events:none;opacity:.6}
+#hero .pointer-glow{position:absolute;width:640px;height:640px;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle,color-mix(in srgb,var(--cyan) 7%,transparent),transparent 60%);
+  transform:translate(-50%,-50%);left:-9999px;top:0;transition:left 1.2s ease-out,top 1.2s ease-out}
+.hero-kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--dim);display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:22px;position:relative}
+.hero-kicker .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:blink 2.4s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+h1{font-size:clamp(30px,5.4vw,52px);line-height:1.22;font-weight:750;letter-spacing:.01em;position:relative}
+h1 .g{color:var(--cyan)} h1 .b{color:var(--amber)}
+.hero-goal{margin:20px 0 26px;color:var(--dim);font-size:16.5px;max-width:720px;position:relative}
+.hero-goal b{color:var(--tx)}
+.claim{
+  position:relative;max-width:760px;border:1px solid var(--line2);border-left:3px solid var(--amber);
+  background:var(--panel);padding:16px 20px;font-family:var(--mono);font-size:15px;line-height:1.9;border-radius:0 6px 6px 0;
+}
+.claim .from{text-decoration:line-through;text-decoration-color:var(--red);color:var(--dim)}
+.claim .to{color:var(--amber);font-weight:700}
+.claim .cap{display:block;font-size:11.5px;color:var(--faint);letter-spacing:.12em;margin-bottom:4px}
+.dials{display:flex;gap:26px;flex-wrap:wrap;margin-top:40px;position:relative}
+.dial{width:132px;text-align:center}
+.dial-face{
+  position:relative;width:110px;height:110px;margin:0 auto;border-radius:50%;
+  background:conic-gradient(from -90deg,var(--green) 0 var(--pct,0%),var(--line) var(--pct,0%) 100%);
+  transition:--pct 1.6s;
+}
+.dial-face::before{content:'';position:absolute;inset:11px;border-radius:50%;background:var(--panel);border:1px solid var(--line)}
+.dial-face .num{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);font-size:23px;font-weight:700;color:var(--tx);z-index:2}
+.dial-face .num small{font-size:11px;color:var(--faint)}
+.needle{position:absolute;left:50%;bottom:50%;width:2px;height:42px;background:var(--red);transform-origin:50% 100%;transform:translateX(-50%) rotate(-90deg);z-index:3;border-radius:1px;box-shadow:0 0 6px color-mix(in srgb,var(--red) 60%,transparent)}
+.in.revealed .needle{transition:transform 1.7s cubic-bezier(.2,.9,.25,1.1)}
+.dial figcaption{margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--dim);letter-spacing:.04em}
+.dial figcaption em{display:block;font-style:normal;font-size:10.5px;color:var(--faint)}
+.dial.v .dial-face{background:conic-gradient(from -90deg,var(--amber) 0 var(--pct,0%),var(--line) var(--pct,0%) 100%)}
+.dial.v .num{color:var(--amber)}
+.dial.v figcaption{color:var(--amber)}
+.hero-note{margin-top:26px;font-size:13px;color:var(--faint);font-family:var(--mono);max-width:720px;position:relative}
+
+/* ===== reveal ===== */
+.reveal{opacity:0;transform:translateY(16px);transition:opacity .7s ease,transform .7s ease}
+.reveal.revealed{opacity:1;transform:none}
+
+/* ===== 定位 chips ===== */
+.bullets{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:8px}
+.bullet{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;font-size:14.5px}
+.bullet .bt{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--cyan);margin-bottom:6px}
+.bullet.warn{border-left:3px solid var(--amber)}
+
+/* ===== R1 card matrix ===== */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;position:relative;overflow:hidden}
+.card::after{content:'';position:absolute;inset:0;background:linear-gradient(135deg,color-mix(in srgb,var(--cyan) 6%,transparent),transparent 45%);pointer-events:none}
+.card .cid{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.08em}
+.card h4{font-size:15px;margin:4px 0 8px}
+.card p{font-size:13.5px;color:var(--dim);margin:0}
+.card .pick{position:absolute;top:12px;right:12px;font-family:var(--mono);font-size:11px;color:var(--green)}
+.flowline{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:22px;font-family:var(--mono);font-size:13px}
+.flowline .stage{border:1px solid var(--line2);border-radius:20px;padding:5px 14px;background:var(--panel);color:var(--tx)}
+.flowline .stage b{color:var(--cyan)}
+.flowline .arr{color:var(--faint)}
+
+/* ===== R2 table ===== */
+table{width:100%;border-collapse:collapse;font-size:14px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+th{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-align:left;color:var(--cyan);background:var(--panel2);padding:10px 14px;border-bottom:1px solid var(--line)}
+td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--dim)}
+tr:last-child td{border-bottom:none}
+td:first-child{color:var(--tx);font-weight:600;white-space:nowrap}
+td .sub{display:block;font-size:12px;color:var(--faint);font-weight:400;font-family:var(--mono);margin-top:2px}
+.tscroll{overflow-x:auto;border-radius:8px}
+
+/* ===== R3 big numbers ===== */
+.numbers{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.bignum{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px 24px;position:relative}
+.bignum .v{font-family:var(--mono);font-size:clamp(34px,4.6vw,52px);font-weight:700;line-height:1.1;color:var(--cyan)}
+.bignum .v.red{color:var(--red)} .bignum .v.amber{color:var(--amber)} .bignum .v.green{color:var(--green)} .bignum .v.violet{color:var(--violet)}
+.bignum .k{font-size:14.5px;margin-top:8px;font-weight:600}
+.bignum .s{font-size:12.5px;color:var(--faint);margin-top:6px;font-family:var(--mono);line-height:1.6}
+.arrowduo{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px}
+.arrowduo .a{font-family:var(--mono);font-size:22px;font-weight:700}
+.arrowduo .a.minus{color:var(--red)} .arrowduo .a.plus{color:var(--green)}
+.arrowduo .lbl{font-size:12.5px;color:var(--dim)}
+
+/* ===== R4 ETCLOVG strip ===== */
+.etclovg{display:flex;flex-direction:column;gap:10px;margin:10px 0 6px}
+.elayer{display:grid;grid-template-columns:170px 1fr 56px;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 16px}
+.elayer .ename{font-family:var(--mono);font-size:13px;line-height:1.4}
+.elayer .ename b{color:var(--tx);font-size:15px}
+.elayer .ename span{display:block;color:var(--faint);font-size:11.5px}
+.elayer .bar{height:14px;border:1px solid var(--line2);border-radius:3px;background:var(--bg2);overflow:hidden;position:relative}
+.elayer .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,color-mix(in srgb,var(--green) 75%,var(--cyan)),var(--green));transition:width 1.3s cubic-bezier(.3,.8,.3,1) var(--d,0s)}
+.in.revealed .elayer .bar i{width:var(--w,100%)}
+.elayer .rating{font-family:var(--mono);font-size:20px;color:var(--green);text-align:center}
+.elayer.v-gap{border:1px solid var(--red);background:color-mix(in srgb,var(--red) 4%,var(--panel));box-shadow:0 0 0 1px color-mix(in srgb,var(--red) 22%,transparent),0 0 26px color-mix(in srgb,var(--red) 12%,transparent)}
+.elayer.v-gap .bar i{background:linear-gradient(90deg,var(--amber),color-mix(in srgb,var(--amber) 60%,var(--red)))}
+.elayer.v-gap .rating{color:var(--amber)}
+.elayer.v-gap .ename b{color:var(--amber)}
+.strip-note{font-family:var(--mono);font-size:12.5px;color:var(--faint);margin-top:10px}
+.lit-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-top:20px}
+.lit{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--green);border-radius:6px;padding:12px 15px;font-size:13.5px}
+.lit b{display:block;font-size:14px;margin-bottom:3px}
+.lit .st{font-family:var(--mono);color:var(--green);font-size:12px;float:right}
+.lit p{color:var(--dim);margin:0;font-size:13px}
+.lit.half{border-left-color:var(--amber)} .lit.half .st{color:var(--amber)}
+
+/* ===== R5 package chips + gap scan ===== */
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 22px}
+.chip{font-family:var(--mono);font-size:12.5px;border:1px solid var(--line2);border-radius:4px;padding:4px 10px;background:var(--panel);color:var(--tx)}
+.chip.on{border-color:color-mix(in srgb,var(--green) 55%,var(--line2))}
+.chip.on::before{content:'●';color:var(--green);margin-right:6px;font-size:9px;vertical-align:1px}
+.chip.thin{border-color:var(--amber);color:var(--amber)}
+.chip.thin::before{content:'◐';margin-right:6px;font-size:11px}
+.gapscan{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.gaprow{display:grid;grid-template-columns:150px 1fr 92px;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);font-size:13.5px;align-items:center}
+.gaprow:last-child{border-bottom:none}
+.gaprow .gk{font-family:var(--mono);font-size:12.5px;color:var(--cyan);letter-spacing:.04em}
+.gaprow .gv{color:var(--dim)}
+.gaprow .gs{font-family:var(--mono);font-size:18px;text-align:center;color:var(--green)}
+.gaprow.alarm{background:color-mix(in srgb,var(--red) 5%,var(--panel))}
+.gaprow.alarm .gs{color:var(--amber)}
+.gaprow.alarm .gk{color:var(--amber)}
+.in.revealed .gaprow.alarm{animation:alarmpulse 2.6s ease-in-out infinite}
+@keyframes alarmpulse{0%,100%{box-shadow:inset 0 0 0 0 transparent}50%{box-shadow:inset 3px 0 0 0 var(--amber)}}
+.scan-head{font-family:var(--mono);font-size:11.5px;letter-spacing:.12em;color:var(--faint);padding:9px 16px;background:var(--panel2);border-bottom:1px solid var(--line);display:grid;grid-template-columns:150px 1fr 92px;gap:12px}
+.evidence-line{margin-top:18px;font-size:14.5px;background:var(--panel);border:1px dashed var(--line2);border-radius:8px;padding:14px 18px;color:var(--dim)}
+.evidence-line b{color:var(--amber)}
+
+/* ===== star map ===== */
+#starmap{background:var(--panel);border:1px solid var(--line);border-radius:10px;position:relative;height:250px;overflow:hidden;margin:18px 0 10px}
+#starmap canvas{position:absolute;inset:0;width:100%;height:100%}
+.starmap-band{position:absolute;top:0;bottom:0;left:var(--x);width:var(--w);border-left:1px dashed color-mix(in srgb,var(--violet) 35%,transparent)}
+.starmap-band .bl{position:absolute;top:8px;left:8px;font-family:var(--mono);font-size:10.5px;color:var(--violet);letter-spacing:.05em;white-space:nowrap}
+.legend-note{font-family:var(--mono);font-size:12px;color:var(--faint)}
+
+/* ===== convergence ===== */
+.conv-grid{display:grid;grid-template-columns:minmax(280px,340px) 1fr;gap:28px;align-items:start}
+@media(max-width:820px){.conv-grid{grid-template-columns:1fr}}
+.ringwrap{text-align:center}
+.ringbox{position:relative;width:250px;height:250px;margin:0 auto}
+.ring{width:250px;height:250px;border-radius:50%;background:conic-gradient(
+  var(--c1) 0 20deg, var(--c2) 20deg 92deg, var(--c3) 92deg 132deg, var(--c4) 132deg 157deg,
+  var(--c5) 157deg 184deg, var(--c6) 184deg 224deg, var(--c7) 224deg 360deg);
+  -webkit-mask:radial-gradient(circle,transparent 0 56%,#000 57%);mask:radial-gradient(circle,transparent 0 56%,#000 57%);
+  transform:rotate(-90deg) scale(0);transition:transform 1s cubic-bezier(.3,.9,.3,1.05)}
+.in.revealed .ring{transform:rotate(-90deg) scale(1)}
+.ringhub{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+.ringhub .t{font-family:var(--mono);font-size:12.5px;color:var(--dim);text-align:center;line-height:1.6}
+.ringhub .t b{display:block;font-size:26px;color:var(--tx)}
+.rlegend{display:grid;grid-template-columns:1fr 1.15fr;gap:5px 12px;text-align:left;font-size:12.5px;margin-top:14px;font-family:var(--mono)}
+.rlegend .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:7px;vertical-align:1px}
+.rlegend .seg{color:var(--faint)}
+.scatter{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px}
+.scatter svg{width:100%;height:auto;display:block}
+.sdot{font-family:var(--mono)}
+.waves{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-top:22px}
+.wave{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:15px 17px}
+.wave .wtag{font-family:var(--mono);font-size:11px;letter-spacing:.12em;margin-bottom:8px}
+.wave.w1 .wtag{color:var(--red)} .wave.w2 .wtag{color:var(--amber)} .wave.w3 .wtag{color:var(--violet)} .wave.w0 .wtag{color:var(--faint)}
+.wave b{font-size:14.5px}
+.wave p{font-size:13px;color:var(--dim);margin:6px 0 0}
+.nuf{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-top:22px}
+.nufcard{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+.nufcard .nl{font-family:var(--mono);font-size:12px;color:var(--dim);letter-spacing:.08em;display:flex;justify-content:space-between}
+.nufcard .nl b{color:var(--tx);font-size:15px}
+.nufbar{height:8px;border-radius:4px;background:var(--bg2);border:1px solid var(--line);margin:10px 0 8px;overflow:hidden}
+.nufbar i{display:block;height:100%;width:0;transition:width 1.2s cubic-bezier(.3,.8,.3,1) var(--d,0s)}
+.in.revealed .nufbar i{width:var(--w)}
+.nufcard p{font-size:12.5px;color:var(--faint);margin:0;line-height:1.6}
+.verdict{margin-top:20px;border:1px solid var(--line2);border-left:3px solid var(--green);background:var(--panel);padding:15px 19px;border-radius:0 8px 8px 0;font-size:14.5px}
+.verdict b{color:var(--green)}
+
+/* ===== finale ===== */
+.finale-head{font-size:clamp(24px,4vw,36px);font-weight:750;margin-bottom:6px}
+.finale-head .from{color:var(--faint);text-decoration:line-through;text-decoration-color:var(--red);font-weight:500}
+.finale-head .to{color:var(--amber)}
+.components{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:30px}
+.comp{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;position:relative}
+.comp .cnum{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.14em}
+.comp h4{font-size:17px;margin:6px 0 10px}
+.comp h4 .en{display:block;font-family:var(--mono);font-size:11.5px;color:var(--dim);font-weight:400;margin-top:2px}
+.comp p{font-size:13.5px;color:var(--dim);margin-bottom:10px}
+.pod{display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--dim)}
+.pod .lamp{width:9px;height:9px;border-radius:50%;flex:none;animation:blink 1.8s infinite}
+.lamp.g{background:var(--green);box-shadow:0 0 8px var(--green)}
+.lamp.a{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.lamp.r{background:var(--red);box-shadow:0 0 8px var(--red)}
+.lamp.r{animation-duration:1s}
+.valve{display:flex;align-items:center;gap:0;margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.valve .pipe{flex:1;height:8px;border:1px solid var(--line2);background:repeating-linear-gradient(90deg,color-mix(in srgb,var(--cyan) 25%,transparent) 0 6px,transparent 6px 14px)}
+.valve .gate{flex:none;width:34px;height:34px;border-radius:50%;background:var(--panel2);border:2px solid var(--red);display:grid;place-items:center;color:var(--red);font-size:14px;box-shadow:0 0 12px color-mix(in srgb,var(--red) 35%,transparent);animation:blink 2.2s infinite}
+.stm{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;font-family:var(--mono);font-size:11.5px}
+.stm .s{border:1px solid var(--line2);border-radius:4px;padding:3px 9px;background:var(--bg2)}
+.stm .s.hot{border-color:var(--cyan);color:var(--cyan)}
+.stm .a{color:var(--faint)}
+.mvp{margin-top:30px;border:1px solid var(--red);border-radius:10px;padding:20px 24px;background:color-mix(in srgb,var(--red) 4%,var(--panel));position:relative}
+.mvp .mk{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--red);margin-bottom:8px}
+.mvp .mtext{font-size:16.5px;font-weight:600}
+.mvp .mtext .said{color:var(--faint)}
+.mvp .mtext .gate{color:var(--red);font-family:var(--mono)}
+.mvp .msub{font-size:13px;color:var(--dim);margin-top:8px}
+
+/* ===== wildcard & danger ===== */
+.wc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.wc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px}
+.wc .wt{font-family:var(--mono);font-size:11px;letter-spacing:.12em;margin-bottom:8px}
+.wc.hiddenGem .wt{color:var(--violet)} .wc.danger .wt{color:var(--red)} .wc.thread .wt{color:var(--cyan)} .wc.rule .wt{color:var(--amber)}
+.wc h4{font-size:16px;margin-bottom:8px}
+.wc p{font-size:13.5px;color:var(--dim);margin:0}
+.wc .ids{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin-top:8px}
+.dangerbar{height:10px;border-radius:5px;background:linear-gradient(90deg,var(--red),var(--amber) 46%,var(--green) 54%,var(--cyan));margin:12px 0 4px;position:relative}
+.dangerbar .tick{position:absolute;top:-5px;bottom:-5px;left:50%;width:2px;background:var(--tx)}
+.dangerlbl{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+/* ===== footer ===== */
+footer{border-top:1px solid var(--line);padding:48px 0 64px;font-size:14px;color:var(--dim)}
+footer .ftgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-bottom:22px}
+footer .ft{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 17px}
+footer .ft .fk{font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--faint);margin-bottom:5px}
+footer .ft .fv{font-size:13.5px;color:var(--tx);word-break:break-all}
+footer .sig{font-family:var(--mono);font-size:12.5px;color:var(--faint);margin-top:16px}
+@media(max-width:640px){
+  .elayer{grid-template-columns:120px 1fr 40px;gap:10px;padding:10px 12px}
+  .gaprow{grid-template-columns:110px 1fr 52px}
+  .scan-head{grid-template-columns:110px 1fr 52px}
+  .dials{gap:14px}
+  .dial{width:110px}
+}
+</style>
+</head>
+<body>
+<div id="prog"></div>
+
+<header class="topnav">
+  <div class="wrap navrow" id="navrow">
+    <span class="brand">VIBE-PLUGIN//2026-11-09</span>
+    <a href="#hero">开场</a>
+    <a href="#r1">轮1 种子</a>
+    <a href="#r2">轮2 挖宝</a>
+    <a href="#r3">轮3 证据</a>
+    <a href="#r4">轮4 学科</a>
+    <a href="#r5">轮5 考古</a>
+    <a href="#conv">收敛</a>
+    <a href="#final">终选</a>
+    <a href="#wc">wildcard</a>
+    <a href="#foot">落款</a>
+    <button id="themeBtn" type="button">LIGHT ◻</button>
+  </div>
+</header>
+
+<main>
+
+<!-- ============ HERO ============ -->
+<section id="hero" class="in">
+  <div class="wrap">
+    <canvas id="scope"></canvas>
+    <div class="pointer-glow" id="pglow"></div>
+    <div class="hero-kicker">
+      <span class="dot"></span>
+      <span>BMAD BRAINSTORMING · MODE: AUTONOMOUS · IDEATE-FOR-ME</span>
+      <span class="tag cyan">5 轮发散</span><span class="tag violet">135 条想法</span><span class="tag amber">7 骨架 → 1 终选</span>
+    </div>
+    <h1>给 DeepSeek Harness<br>装上<span class="g">仪表盘</span>和<span class="b">刹车片</span></h1>
+    <p class="hero-goal">一场关于 <b>「DSH 上的 Vibe Coding 插件」</b>的头脑风暴纪念品 —— 目标是<b>用 Tools + Skills + Hooks 稳定推动工作流，自动注入系统提示词与任务上下文</b>。</p>
+    <div class="claim">
+      <span class="cap">// 本次风暴最大的收获：命题改写</span>
+      <span class="from">『造一套 Vibe Coding harness』</span><br>
+      → <span class="to">『补 DSH 缺失的验证反馈层（V 层），并包上方法论』</span>
+    </div>
+    <div class="dials">
+      <figure class="dial" data-pct="100"><div class="dial-face"><span class="needle"></span><span class="num">100<small>%</small></span></div><figcaption>注入面<span>prompt · section · persona</span></figcaption></figure>
+      <figure class="dial" data-pct="100"><div class="dial-face"><span class="needle"></span><span class="num">100<small>%</small></span></div><figcaption>编排面<span>goal · workflow · subagent</span></figcaption></figure>
+      <figure class="dial" data-pct="100"><div class="dial-face"><span class="needle"></span><span class="num">100<small>%</small></span></div><figcaption>上下文面<span>compaction · spill</span></figcaption></figure>
+      <figure class="dial v" data-pct="50"><div class="dial-face"><span class="needle"></span><span class="num">◐</span></div><figcaption>V 验证层<span>风暴前唯一半空的表盘</span></figcaption></figure>
+    </div>
+    <p class="hero-note">注：前三面「完整」、V 层「最薄（仅 auto-review + observation-policy）」——评级来自轮 5 对 DSH 发行版 307 个 @deepseek-ai 包的逐包考古，并与 Awesome-Agent-Harness 的 V=◐ 独立评级交叉核实一致。指针初始位为叙事而设。</p>
+  </div>
+</section>
+
+<!-- ============ 定位 ============ -->
+<section id="pos">
+  <div class="wrap">
+    <h2><span class="secnum">§0</span>这场风暴是什么、不是什么</h2>
+    <p class="secsub">// POSITIONING — 开场即定调的三块基石</p>
+    <div class="bullets reveal">
+      <div class="bullet"><div class="bt">选题</div>一套运行在 DeepSeek Harness 上的 Vibe Coding 插件：提供 Tools + Skills，基于 Hooks 稳定推动工作流，并自动注入系统提示词与任务上下文。</div>
+      <div class="bullet"><div class="bt">定位</div>是<b>平台型工程工具</b>，不是又一个 code assistant。核心难点在于<b>让工作流稳定</b>，而非堆 feature。</div>
+      <div class="bullet warn"><div class="bt">方法（用户指定）</div>Ideate for me 模式；用 /qmd 检索本地知识库找对标项目借鉴模仿——定位是<b>多个项目的融合体</b>，从不同项目吸取优秀经验，填充 Vibe Coding 的各阶段 / 具体动作。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ R1 ============ -->
+<section id="r1" class="in">
+  <div class="wrap">
+    <h2><span class="secnum">§1</span>轮 1 · QMD 知识库种子 <span class="tag cyan">#1–35</span></h2>
+    <p class="secsub">// DIVERGENCE ROUND 1 — 从本地笔记里挖出六个对标，播成卡片矩阵</p>
+    <div class="cards reveal">
+      <div class="card"><span class="pick">借鉴</span><div class="cid">BENCHMARK 01</div><h4>Superpowers</h4><p>三层 bootstrap：从引导层逐级展开能力，工作流靠分层装载而非一次性灌入。</p></div>
+      <div class="card"><span class="pick">借鉴</span><div class="cid">BENCHMARK 02</div><h4>Spec Kit</h4><p>收敛环：以规格为轴心把发散产出不断收口。</p></div>
+      <div class="card"><span class="pick">借鉴</span><div class="cid">BENCHMARK 03</div><h4>BMAD</h4><p>阶段循环：角色与工作流按阶段推进，方法论的完整参照系。</p></div>
+      <div class="card"><span class="pick">借鉴</span><div class="cid">BENCHMARK 04</div><h4>omO / Kibitzer</h4><p>结对提示与旁路建议层：不打断主线、在关键时机递话。</p></div>
+      <div class="card"><span class="pick">底座</span><div class="cid">BENCHMARK 05–06</div><h4>DSH 五挂载面 + 工具管线</h4><p>插件能挂的五个原生位置与工具执行管线——本平台的既有地基。</p></div>
+      <div class="card"><span class="pick">产物</span><div class="cid">OUTPUT → 轮3</div><h4>35 条编号想法 + 五个骨架候选</h4><p class="mono" style="font-size:12px">State-Machine · Everything-Is-A-Hook · Intent-First · Context-Eng-as-Plugin · Skill-Action-Tool</p></div>
+    </div>
+    <h3 class="reveal">轮 1 勾勒的五阶段工作流</h3>
+    <div class="flowline reveal">
+      <span class="stage"><b>A</b> 注入宪法</span><span class="arr">→</span>
+      <span class="stage"><b>B</b> 意图路由</span><span class="arr">→</span>
+      <span class="stage"><b>C</b> 工具策略 + 子代理</span><span class="arr">→</span>
+      <span class="stage"><b>D</b> 收敛环验证</span><span class="arr">→</span>
+      <span class="stage"><b>E</b> lessons 沉淀</span>
+    </div>
+    <div id="starmap" class="reveal">
+      <canvas></canvas>
+      <div class="starmap-band" style="--x:2%;--w:20%"><span class="bl">轮1 #1–35 · QMD 种子</span></div>
+      <div class="starmap-band" style="--x:24%;--w:24%"><span class="bl">轮2 #36–70 · 网络挖宝</span></div>
+      <div class="starmap-band" style="--x:50%;--w:16%"><span class="bl">轮3 证据背书</span></div>
+      <div class="starmap-band" style="--x:68%;--w:14%"><span class="bl">轮4 #71–105 · 学科</span></div>
+      <div class="starmap-band" style="--x:84%;--w:15%"><span class="bl">轮5 #106–135 · 考古</span></div>
+    </div>
+    <p class="legend-note reveal">▲ 135 条想法星图（示意）：每条编号想法为一颗星，亮星为 memlog 留名的代表条目。完整清单详见会话记录，此处不伪造。</p>
+  </div>
+</section>
+
+<!-- ============ R2 ============ -->
+<section id="r2" class="in">
+  <div class="wrap">
+    <h2><span class="secnum">§2</span>轮 2 · 网络挖宝 <span class="tag cyan">#36–70</span></h2>
+    <p class="secsub">// DIVERGENCE ROUND 2 — 四个外部项目的可借鉴件，逐一落表</p>
+    <div class="tscroll reveal">
+      <table>
+        <thead><tr><th>项目</th><th>身份</th><th>挖到的可借鉴件</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>dsh-superagent-prototype<span class="sub">轮4 被拒概念表亦出自此</span></td>
+            <td>官方参考实现</td>
+            <td>9 步 prompt 装配（末位 policy 保 cache）· part override registry + 占位符 · off / observe / auto 三模式 · 八概念域模型 + 被拒概念表 · 单写者 Engine · 并发 + 1 人保留 slot · prepare 命令 + worktree</td>
+          </tr>
+          <tr>
+            <td>Claude Code</td>
+            <td>动态工作流</td>
+            <td>plan 进代码（dynamic workflows）· ultracode 关键词触发 · 其 ultracode 与后文另两路证据汇成「advisory 优先」暗线</td>
+          </tr>
+          <tr>
+            <td>mods</td>
+            <td>扩展形态</td>
+            <td>进程内 JS hook —— hook 不必外置，可长在代理进程里</td>
+          </tr>
+          <tr>
+            <td>OpenClaw</td>
+            <td>工作流骨架</td>
+            <td>10 阶段 hook 提案 · subagent announce / steer 通信原语</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="reveal dim" style="margin-top:18px">35 条新想法（#36–70）与骨架候选在这一轮继续生长；提示词编译工件（#36–41）、阶段与授权包装（#42–46、#57–64）、Code-as-Workflow（#52–56）、供应链与市场（#65–68）、学习进化（#69–70）等簇的种子都在此处埋下。</p>
+  </div>
+</section>
+
+<!-- ============ R3 ============ -->
+<section id="r3" class="in">
+  <div class="wrap">
+    <h2><span class="secnum">§3</span>轮 3 · 技能安全与执行干预的实证 <span class="tag red">EVIDENCE</span></h2>
+    <p class="secsub">// DIVERGENCE ROUND 3 — 数字大字报：证据轮不问「想不想做」，只摆「数据说什么」</p>
+    <div class="numbers reveal">
+      <div class="bignum">
+        <div class="v">46.3<span style="font-size:.5em">%</span></div>
+        <div class="k">skills 生态审计：重复率</div>
+        <div class="s">同一审计还给出：9% 达 L3 · 500 行 / 5k token 红线。市场繁荣 ≠ 质量繁荣。</div>
+      </div>
+      <div class="bignum">
+        <div class="v red">≈ sudo</div>
+        <div class="k">「installing skill ≈ sudo」</div>
+        <div class="s">装技能等于交权。安全默认值不是可选项——供应链即攻击面。</div>
+      </div>
+      <div class="bignum">
+        <div class="v amber">注入面</div>
+        <div class="k">promptinject-agent-skills：技能即注入面</div>
+        <div class="s">结论落为一句设计规则：技能文本必须进数据区，不得进指令区。</div>
+      </div>
+      <div class="bignum">
+        <div class="k" style="margin:0 0 8px;font-size:15px">GABench：控制点之争的裁决</div>
+        <div class="arrowduo"><span class="a minus">+0.3 ~ +0.4</span><span class="lbl">system prompt（对强模型几乎无效）</span></div>
+        <div class="arrowduo"><span class="a plus">+2.8 ~ +7.7</span><span class="lbl">执行期拦截</span></div>
+        <div class="s" style="margin-top:10px">→ <b style="color:var(--green)">外置控制点 &gt; 提示词。</b>这条实证后来直接支撑了 U=10 的终选评分。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ R4 ============ -->
+<section id="r4" class="in">
+  <div class="wrap">
+    <h2><span class="secnum">§4</span>轮 4 · harness engineering 成为学科 <span class="tag cyan">#71–105</span></h2>
+    <p class="secsub">// DIVERGENCE ROUND 4 — 文献 + 量化实证，最终收敛到一张七层扫描图</p>
+
+    <div class="tscroll reveal">
+      <table>
+        <thead><tr><th>文献</th><th>贡献</th></tr></thead>
+        <tbody>
+          <tr><td>Boeckeler · martinfowler · 2026-04</td><td>把 harness engineering 立成学科：Guides 前馈 + Sensors 反馈 × Computational / Inferential × Maintainability / ArchFitness / Behaviour 三域；提出 harnessability 与 harness templates。</td></tr>
+          <tr><td>ETCLOVG 七层 survey</td><td>七层框架给 agent harness 做覆盖度评级；DSH 是四个 anchor 之一，<b style="color:var(--amber)">V 层 = ◐ 半满</b>。</td></tr>
+          <tr><td>Code-as-Harness</td><td>四性：可执行 · 可检视 · 有状态 · 受治理。</td></tr>
+          <tr><td>arXiv 2609.20804 组件实证</td><td>上下文管理 = 溢出保险（32k 差 35.7pp → 128k 差 2.7pp）；T4 先截后摘最优；recall_event 56.3% 从未调用；planning 弱模型 +11.6 / 强模型 −2 省 30% token；action space 无固定答案；90 行最小 harness。</td></tr>
+          <tr><td>Stop Comparing…</td><td>披露卡：对比 harness 前先披露配置。</td></tr>
+          <tr><td>UTBoost</td><td>verifier 是测试的「第三项」——验证本身是被度量、被优化的对象。</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="reveal">ETCLOVG 七层缺口扫描 —— 六层亮，一层暗</h3>
+    <div class="etclovg reveal">
+      <div class="elayer" style="--d:0s"><div class="ename"><b>E</b> Environment<span>环境</span></div><div class="bar"><i style="--w:100%"></i></div><div class="rating">●</div></div>
+      <div class="elayer" style="--d:.08s"><div class="ename"><b>T</b> Tools<span>工具</span></div><div class="bar"><i style="--w:100%"></i></div><div class="rating">●</div></div>
+      <div class="elayer" style="--d:.16s"><div class="ename"><b>C</b> Context<span>上下文</span></div><div class="bar"><i style="--w:100%"></i></div><div class="rating">●</div></div>
+      <div class="elayer" style="--d:.24s"><div class="ename"><b>L</b> Lifecycle<span>生命周期 · 工作流</span></div><div class="bar"><i style="--w:100%"></i></div><div class="rating">●</div></div>
+      <div class="elayer" style="--d:.32s"><div class="ename"><b>O</b> Observability<span>可观测</span></div><div class="bar"><i style="--w:100%"></i></div><div class="rating">●</div></div>
+      <div class="elayer v-gap" style="--d:.4s"><div class="ename"><b>V</b> Verification<span>验证 · 反馈传感器</span></div><div class="bar"><i style="--w:50%"></i></div><div class="rating">◐</div></div>
+      <div class="elayer" style="--d:.48s"><div class="ename"><b>G</b> Governance<span>治理 · 安全</span></div><div class="bar"><i style="--w:100%"></i></div><div class="rating">●</div></div>
+    </div>
+    <p class="strip-note reveal">● 满 / ◐ 半满。memlog 逐层记名的缺口只有 V；其余六层依据轮 5 记录的「注入面 / 编排面 / 上下文面 = 完整」显示为满，L 层的增量定位为「只做阶段机薄包装」。示意呈现，非逐包量化数据。</p>
+
+    <div class="lit-grid reveal">
+      <div class="lit"><span class="st">● 完整</span><b>注入面</b><p>system-prompt section（order）+ variable + persona 行。</p></div>
+      <div class="lit"><span class="st">● 完整</span><b>编排面</b><p>goal + goal-round-driver + ralph + workflow + plan-mode + subagent + worktree + schedule。</p></div>
+      <div class="lit"><span class="st">● 完整</span><b>上下文面</b><p>compaction + spill + agent-instructions + repeat-tool-reminder。</p></div>
+      <div class="lit half"><span class="st">◐ 最薄</span><b>V（验证）层</b><p>仅 auto-review + observation-policy，无 guides / sensors 体系——本风暴的靶心。</p></div>
+    </div>
+
+    <div class="bullets reveal" style="margin-top:22px">
+      <div class="bullet"><div class="bt">量化实证 · 记住这几个数</div>
+        <span class="mono">32k 差 35.7pp → 128k 差 2.7pp</span>（上下文管理是溢出保险，窗口越大边际越小）· <span class="mono">recall_event 56.3% 从未调用</span>（装上去 ≠ 用起来 → 引出「调用率仪表盘」）· <span class="mono">planning：弱模型 +11.6 / 强模型 −2</span> 且省 30% · <span class="mono">90 行最小 harness</span>。</div>
+      <div class="bullet"><div class="bt">骨架候选演化</div>轮 1–2 的五个骨架（State-Machine / Everything-Is-A-Hook / Intent-First / Context-Eng-as-Plugin / Skill-Action-Tool）→ 轮 4 扩为<b>七骨架</b> → 轮 5 以源码证据重排：<b style="color:var(--amber)">V-Layer-Fill 登顶</b>，纯编排类降级为薄包装，Prompt-as-Compiled-Artifact 并入前两簇。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ R5 ============ -->
+<section id="r5" class="in">
+  <div class="wrap">
+    <h2><span class="secnum">§5</span>轮 5 · DSH 本地源码考古 <span class="tag cyan">#106–135</span></h2>
+    <p class="secsub">// DIVERGENCE ROUND 5 — 直读发行版 307 个 @deepseek-ai 包，逐包核对，最后只剩一个缺口在闪</p>
+
+    <h3 class="reveal">包清单 · memlog 记名的原生面（chip 为能力面，非完整包名列表）</h3>
+    <div class="chips reveal">
+      <span class="chip on">systemPrompt.section order+variable+refreshContext</span>
+      <span class="chip on">agent 作用域覆盖</span>
+      <span class="chip on">persona 行</span>
+      <span class="chip on">AGENTS.md 链去重+预算+发现</span>
+      <span class="chip on">goal + round-driver</span>
+      <span class="chip on">ralph</span>
+      <span class="chip on">workflow JS 编排</span>
+      <span class="chip on">plan-mode</span>
+      <span class="chip on">agent-team</span>
+      <span class="chip on">subagent 多后端 + send_message</span>
+      <span class="chip on">tool-worktree</span>
+      <span class="chip on">schedule</span>
+      <span class="chip on">compaction</span>
+      <span class="chip on">spill = pass-by-reference</span>
+      <span class="chip on">repeat-tool-reminder</span>
+      <span class="chip on">skill 渐进披露</span>
+      <span class="chip on">permission-presets</span>
+      <span class="chip on">plugin-market</span>
+      <span class="chip thin">auto-review</span>
+      <span class="chip thin">observation-policy</span>
+    </div>
+
+    <h3 class="reveal">缺口扫描仪 · 逐面读数</h3>
+    <div class="gapscan reveal">
+      <div class="scan-head"><span>FACE</span><span>EVIDENCE（考古所见）</span><span>STATE</span></div>
+      <div class="gaprow"><span class="gk">注入面</span><span class="gv">section / variable / persona / AGENTS.md 链 —— 完整注入面</span><span class="gs">●</span></div>
+      <div class="gaprow"><span class="gk">编排面</span><span class="gv">goal / ralph / workflow / plan-mode / subagent / worktree / schedule —— 完整编排面</span><span class="gs">●</span></div>
+      <div class="gaprow"><span class="gk">上下文面</span><span class="gv">compaction / spill / repeat-tool-reminder —— 完整上下文面</span><span class="gs">●</span></div>
+      <div class="gaprow"><span class="gk">治理面</span><span class="gv">permission-presets / plugin-market / skill 渐进披露 已在位</span><span class="gs">●</span></div>
+      <div class="gaprow alarm"><span class="gk">V 验证层</span><span class="gv">仅 auto-review + observation-policy；无 guides / sensors 体系 → 净增量所在</span><span class="gs">◐</span></div>
+      <div class="gaprow alarm"><span class="gk">L 生命周期</span><span class="gv">goal / plan-mode 原生可复用 → 增量只做「阶段机薄包装」，不重造</span><span class="gs">◐</span></div>
+    </div>
+    <div class="evidence-line reveal">
+      <b>交叉核实：</b>Awesome-Agent-Harness 给 DSH 的 V = ◐（半满）评级，与逐包源码核实<b>一致</b>。Vibe Coding 插件的最大净增量 = 把 V 层补成 ●：反馈传感器体系（linter / test / 结构检查接进 tools post-execute）+ 证据门（evidence before assertions）+ harness coverage。
+    </div>
+
+    <h3 class="reveal">#106–135 落成的簇成员</h3>
+    <div class="bullets reveal">
+      <div class="bullet"><div class="bt">唯一净增量 · V 层</div>Feedback Sensor Registry · LLM 优化错误消息（正面提示注入）· Evidence Gate（turn-stopping）· 结构化等人字段 · harness coverage 度量 · 调用率仪表盘。</div>
+      <div class="bullet"><div class="bt">L 层</div>只做阶段机薄包装。</div>
+      <div class="bullet"><div class="bt">技能安全三则</div>技能 = 数据区 · judge 异源 · fail-closed。</div>
+      <div class="bullet warn"><div class="bt">暗线判决</div>用户原始四要件（Tools / Skills / Hooks 推工作流 / 注入提示词与上下文）中<b>三件 DSH 已原生解决</b>；第四件 Hooks 缺的正是「验证反馈」半边——命题自此改写为「给 harness 装仪表盘和刹车片」。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONVERGENCE ============ -->
+<section id="conv" class="in">
+  <div class="wrap">
+    <h2><span class="secnum">§6</span>收敛三步</h2>
+    <p class="secsub">// AFFINITY CLUSTERING → IMPACT × COST → NUF VOTE — 135 条星尘过三道闸</p>
+
+    <div class="conv-grid">
+      <div class="ringwrap reveal">
+        <h3 style="margin:0 0 14px;text-align:left">步 1 · 亲和聚类：7 簇</h3>
+        <div class="ringbox">
+          <div class="ring" style="--c1:#ff5f6d;--c2:#f0a83f;--c3:#3fd0e0;--c4:#a78bfa;--c5:#3fd68f;--c6:#e879b9;--c7:#7c93b5"></div>
+          <div class="ringhub"><div class="t"><b>135</b>条 → 7簇<br>（弧长=成员编号段示意）</div></div>
+        </div>
+        <div class="rlegend">
+          <div><span class="sw" style="background:#ff5f6d"></span>① V层传感器体系</div><div class="seg">#113–122 + #47 + #50（含轮3证据背书）</div>
+          <div><span class="sw" style="background:#f0a83f"></span>② 阶段机与授权薄包装</div><div class="seg">#42–46 · #57–64 · #107 · #123–128</div>
+          <div><span class="sw" style="background:#3fd0e0"></span>③ 提示词编译工件</div><div class="seg">#36–41 · #71–75 · #106 · #108–112 · 大半被原生吸收</div>
+          <div><span class="sw" style="background:#a78bfa"></span>④ Code-as-Workflow</div><div class="seg">#52–56 · #91–92 · #123</div>
+          <div><span class="sw" style="background:#3fd68f"></span>⑤ 供应链与市场</div><div class="seg">#65–68 · #129–131</div>
+          <div><span class="sw" style="background:#e879b9"></span>⑥ 安全面</div><div class="seg">#39 · #48–51 · #132–135</div>
+          <div><span class="sw" style="background:#7c93b5"></span>⑦ 学习进化</div><div class="seg">#26–30 · #69–70 · #101–105 · #128</div>
+        </div>
+      </div>
+
+      <div class="reveal">
+        <h3 style="margin:0 0 14px">步 2 · 影响 × 成本：7 簇落位</h3>
+        <div class="scatter">
+          <svg viewBox="0 0 520 380" role="img" aria-label="影响×成本四象限散点图">
+            <line x1="60" y1="20" x2="60" y2="340" stroke="var(--line2)"/>
+            <line x1="60" y1="340" x2="500" y2="340" stroke="var(--line2)"/>
+            <line x1="60" y1="180" x2="500" y2="180" stroke="var(--line)" stroke-dasharray="4 5"/>
+            <line x1="280" y1="20" x2="280" y2="340" stroke="var(--line)" stroke-dasharray="4 5"/>
+            <text x="20" y="185" fill="var(--faint)" font-size="11" font-family="monospace" transform="rotate(-90 20 185)">IMPACT →</text>
+            <text x="430" y="362" fill="var(--faint)" font-size="11" font-family="monospace">COST →</text>
+            <g class="sdot">
+              <circle cx="130" cy="60" r="17" fill="#ff5f6d" opacity=".9"/><text x="130" y="65" text-anchor="middle" font-size="14" fill="#0a0f18" font-weight="bold">①</text>
+              <text x="130" y="40" text-anchor="middle" font-size="10.5" fill="var(--dim)">V层传感器</text>
+              <circle cx="168" cy="86" r="13" fill="#e879b9" opacity=".9"/><text x="168" y="90" text-anchor="middle" font-size="12" fill="#0a0f18" font-weight="bold">⑥</text>
+              <text x="212" y="86" font-size="10.5" fill="var(--dim)">安全面</text>
+              <circle cx="238" cy="120" r="14" fill="#f0a83f" opacity=".9"/><text x="238" y="124" text-anchor="middle" font-size="12" fill="#0a0f18" font-weight="bold">②</text>
+              <text x="238" y="146" text-anchor="middle" font-size="10.5" fill="var(--dim)">阶段机薄包装</text>
+              <circle cx="400" cy="72" r="13" fill="#3fd68f" opacity=".9"/><text x="400" y="76" text-anchor="middle" font-size="12" fill="#0a0f18" font-weight="bold">⑤</text>
+              <circle cx="442" cy="104" r="13" fill="#7c93b5" opacity=".9"/><text x="442" y="108" text-anchor="middle" font-size="12" fill="#0a0f18" font-weight="bold">⑦</text>
+              <text x="422" y="48" font-size="10.5" fill="var(--dim)">⑤市场 · ⑦学习进化</text>
+              <circle cx="196" cy="150" r="11" fill="none" stroke="#3fd0e0" stroke-dasharray="3 3"/><text x="196" y="154" text-anchor="middle" font-size="11" fill="#3fd0e0">③</text>
+              <circle cx="140" cy="215" r="11" fill="none" stroke="#a78bfa" stroke-dasharray="3 3"/><text x="140" y="219" text-anchor="middle" font-size="11" fill="#a78bfa">④</text>
+              <text x="120" y="248" font-size="10.5" fill="var(--faint)">虚线=并入：③→①② · ④→②的交付形态</text>
+            </g>
+          </svg>
+        </div>
+        <div class="waves">
+          <div class="wave w1"><div class="wtag">WAVE 1 · 第一波</div><b>① V 层传感器体系 + ⑥ 安全默认值</b><p>高影响 · 低成本 —— DSH 唯一真缺口。</p></div>
+          <div class="wave w2"><div class="wtag">WAVE 2 · 第二波</div><b>② 阶段机薄包装</b><p>高影响 · 中成本 —— 方法论差异化所在，Superpowers-DSH 空白位。</p></div>
+          <div class="wave w3"><div class="wtag">WAVE 3 · 第三波</div><b>⑤ 市场模板 + ⑦ 学习进化</b><p>高影响 · 高成本 —— 留 API 钩子，暂不实现。</p></div>
+          <div class="wave w0"><div class="wtag">MERGED · 不单独成波</div><b>③ 提示词工件 / ④ Code-as-Workflow</b><p>③ 并入 ①②；④ 是 ② 的交付形态。</p></div>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="reveal" style="margin-top:38px">步 3 · NUF 终选主骨架：V-Layer-Fill「给 harness 装仪表盘和刹车片」</h3>
+    <div class="nuf reveal">
+      <div class="nufcard"><div class="nl"><b>N</b> ovelty <span style="color:var(--cyan)">9 / 10</span></div><div class="nufbar"><i style="--w:90%;background:var(--cyan);--d:0s"></i></div><p>全 170+ 项目，无一做传感器体系。</p></div>
+      <div class="nufcard"><div class="nl"><b>U</b> sefulness <span style="color:var(--green)">10 / 10</span></div><div class="nufbar"><i style="--w:100%;background:var(--green);--d:.15s"></i></div><p>直击用户第四要件「Hooks 的验证半边」+ GABench 执行期干预实证。</p></div>
+      <div class="nufcard"><div class="nl"><b>F</b> easibility <span style="color:var(--amber)">9 / 10</span></div><div class="nufbar"><i style="--w:90%;background:var(--amber);--d:.3s"></i></div><p>全部挂在既有原生面：tools post-execute · turn-stopping。</p></div>
+    </div>
+    <div class="verdict reveal"><b>主骨架定案：</b>① V 传感器体系（必做）+ ② 阶段机包装（次做，复用 goal / plan-mode / worktree）+ ⑥ 安全默认值（顺手）。</div>
+  </div>
+</section>
+
+<!-- ============ FINALE ============ -->
+<section id="final">
+  <div class="wrap">
+    <h2><span class="secnum">§7</span>终选方向详解 <span class="tag amber">FINAL DIRECTION</span></h2>
+    <p class="finale-head reveal"><span class="from">『造 harness』</span> ⟹ <span class="to">『补 V 层』</span></p>
+    <p class="secsub reveal">// 选定方向 = 「仪表盘与刹车片」—— 三个核心组件 + 一组安全默认值，输入可直接喂 bmad-product-brief / bmad-spec</p>
+
+    <div class="components">
+      <div class="comp reveal">
+        <div class="cnum">COMPONENT 01 · 仪表盘</div>
+        <h4>Feedback Sensor Registry<span class="en">反馈传感器注册表</span></h4>
+        <p>把 linter / test / 结构检查等<b>反馈传感器</b>统一注册，接进 tools 的 post-execute 管线——前馈有 Guides，反馈有 Sensors，两翼合上才算 harnessability 达标。</p>
+        <div class="pod"><span class="lamp g"></span><span class="lamp a"></span><span class="lamp g"></span><span class="lamp r"></span><span>SENSORS · linter / test / structure-check → tools post-execute</span></div>
+      </div>
+      <div class="comp reveal">
+        <div class="cnum">COMPONENT 02 · 刹车片</div>
+        <h4>Evidence Gate<span class="en">证据门 · turn-stopping</span></h4>
+        <p><b>Evidence before assertions</b>：断言「完成 / 修好了」之前必须先交证据。门装在 turn-stopping 原生位——正是 GABench 证明的 +2.8~+7.7 的执行期控制点。</p>
+        <div class="valve"><span>CLAIM</span><div class="pipe"></div><div class="gate">⛔</div><div class="pipe"></div><span style="color:var(--green)">ACCEPT</span></div>
+        <p style="margin-top:10px;font-size:12.5px;color:var(--faint)">配套件：LLM 优化错误消息（正面提示注入）· 结构化等人字段 · harness coverage 度量 · 调用率仪表盘</p>
+      </div>
+      <div class="comp reveal">
+        <div class="cnum">COMPONENT 03 · 方向盘（薄）</div>
+        <h4>阶段机薄包装<span class="en">复用 goal / plan-mode / worktree</span></h4>
+        <p>L 层只做薄包装：寄生 goal 状态即够，做重就是再造 BMAD 轮子——危险组合清单里的第一条红线。</p>
+        <div class="stm">
+          <span class="s">A 注入宪法</span><span class="a">→</span><span class="s">B 意图路由</span><span class="a">→</span><span class="s hot">C 工具+子代理</span><span class="a">→</span><span class="s hot">D 收敛环验证</span><span class="a">→</span><span class="s">E lessons</span>
+        </div>
+        <p style="margin-top:10px;font-size:12.5px;color:var(--faint)">高亮两态即 V 层传感器与证据门的落位处。</p>
+      </div>
+      <div class="comp reveal">
+        <div class="cnum">COMPONENT 04 · 保险丝</div>
+        <h4>安全默认值<span class="en">skills safety defaults</span></h4>
+        <p>技能 = 数据区（不进指令区）· judge 异源 · <b>fail-closed</b>。证据轮的三个数字（46.3% 重复 / 9% L3 / ≈sudo）就是这组默认值的存在理由。</p>
+        <div class="pod"><span class="lamp r"></span><span>FAIL-CLOSED · 未通过判定的技能文本默认拒绝进入执行</span></div>
+      </div>
+    </div>
+
+    <div class="mvp reveal">
+      <div class="mk">MVP 判据 · DEFINITION OF DONE</div>
+      <div class="mtext">装上这套面之后，<span class="said">「模型说修好了」</span>必须 <span class="gate">⛔ 过证据门</span> 才算成立。</div>
+      <div class="msub">判据只有一条、但可证伪：任何 turn-ending 的完成断言，若拿不出 Evidence Gate 认可的证据链，就不得被接受。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ WILDCARD ============ -->
+<section id="wc">
+  <div class="wrap">
+    <h2><span class="secnum">§8</span>被低估的 wildcard 与危险组合</h2>
+    <p class="secsub">// FINAL SYNCH — 风暴合上时留下的四张便签</p>
+    <div class="wc-grid">
+      <div class="wc thread reveal"><div class="wt">跨轮暗线</div><h4>advisory 优先，blocking 要证据背书</h4><p>三条互不相干的独立证据殊途同归：Claude Code ultracode · DSH repeat-tool-reminder · superagent guard。它们共同指向同一条控制哲学。</p></div>
+      <div class="wc hiddenGem reveal"><div class="wt">WILDCARD · 被低估</div><h4>度量学可以是第二差异化</h4><p>调用率仪表盘（#79）与 harness coverage（#121）是「别人没做」的度量学：装上去 ≠ 用起来，recall_event 56.3% 从未调用就是前车之鉴。</p><div class="ids">相关条目 #79 · #121</div></div>
+      <div class="wc danger reveal">
+        <div class="wt">危险组合 · 一条红线</div>
+        <h4>阶段机：做重即死</h4>
+        <div class="dangerbar"><span class="tick"></span></div>
+        <div class="dangerlbl"><span>做重 = 造 BMAD 轮子 ✗</span><span>做薄 = 寄生 goal 状态 ✓</span></div>
+        <p style="margin-top:10px">L 层的增量只能寄生在原生 goal / plan-mode / worktree 上；任何「自建完整阶段引擎」的冲动都会把低成本优势烧光。</p>
+      </div>
+      <div class="wc rule reveal"><div class="wt">沉淀出的设计规则</div><h4>外置控制点 &gt; 提示词</h4><p>GABench 给强模型灌 system prompt 只有 +0.3~+0.4；执行期拦截却有 +2.8~+7.7。插件的力量不该长在「更会说话的提示词」上，而该长在 tools post-execute 与 turn-stopping 这些控制点上。</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer id="foot">
+  <div class="wrap">
+    <div class="ftgrid reveal">
+      <div class="ft"><div class="fk">SOURCE OF TRUTH</div><div class="fv">_bmad-output/brainstorming/brainstorm-dsh-vibe-coding-plugin-2026-11-09/.memlog.md</div></div>
+      <div class="ft"><div class="fk">DATE</div><div class="fv">2026-11-09</div></div>
+      <div class="ft"><div class="fk">PARTICIPANTS</div><div class="fv">Elliott × DeepSeek Harness brainstorm coach</div></div>
+      <div class="ft"><div class="fk">LEDGER</div><div class="fv">5 轮发散 · 135 条想法 · 7 骨架 · 7 簇 · 3 步收敛 · 1 个命题改写</div></div>
+    </div>
+    <p class="reveal" style="font-size:13px;color:var(--dim)">本页为自包含纪念品：单文件、内联 CSS/JS、零外部依赖。所有事实均取自 .memlog.md；其未展开的细节（如 135 条完整清单）以诚实表述代替，未行编造。</p>
+    <p class="sig reveal">// END OF TRANSMISSION — 仪表盘与刹车片，2026-11-09</p>
+  </div>
+</footer>
+
+</main>
+
+<script>
+(function(){
+  var root=document.documentElement;
+  function setTheme(t){root.setAttribute('data-theme',t);var b=document.getElementById('themeBtn');b.textContent=(t==='dark'?'LIGHT ◻':'DARK ◼');try{localStorage.setItem('bst-theme',t)}catch(e){}}
+  var saved=null;try{saved=localStorage.getItem('bst-theme')}catch(e){}
+  setTheme(saved||'dark');
+  document.getElementById('themeBtn').addEventListener('click',function(){setTheme(root.getAttribute('data-theme')==='dark'?'light':'dark')});
+
+  // progress bar
+  var prog=document.getElementById('prog');
+  function onScroll(){var h=document.documentElement.scrollHeight-innerHeight;prog.style.width=(h>0?(scrollY/h)*100:0)+'%'}
+  addEventListener('scroll',onScroll,{passive:true});onScroll();
+
+  // reveal + ring/dials
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){
+    if(e.isIntersecting){e.target.classList.add('revealed');
+      if(e.target.id==='hero')spinDials();
+      io.unobserve(e.target);}})},{threshold:.14});
+  document.querySelectorAll('.reveal,.in').forEach(function(el){io.observe(el)});
+
+  function spinDials(){
+    document.querySelectorAll('.dial').forEach(function(d,i){
+      var pct=parseFloat(d.dataset.pct)||0,face=d.querySelector('.dial-face'),needle=d.querySelector('.needle');
+      face.style.setProperty('--pct','0%');
+      setTimeout(function(){
+        var t0=performance.now(),dur=1500+i*120;
+        function step(t){var k=Math.min(1,(t-t0)/dur);k=1-Math.pow(1-k,3);
+          face.style.setProperty('--pct',(pct*k)+'%');
+          needle.style.transform='translateX(-50%) rotate('+(-90+360*k)+'deg)';
+          if(k<1)requestAnimationFrame(step)}
+        requestAnimationFrame(step);
+      },400+i*160);
+    });
+  }
+
+  // nav active state
+  var links=[].slice.call(document.querySelectorAll('.navrow a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'))});
+  var navIO=new IntersectionObserver(function(es){es.forEach(function(e){
+    if(e.isIntersecting){links.forEach(function(l){l.classList.remove('active')});
+      var i=secs.indexOf(e.target);if(i>=0)links[i].classList.add('active');}})},
+    {rootMargin:'-30% 0px -60% 0px'});
+  secs.forEach(function(s){if(s)navIO.observe(s)});
+
+  // hero pointer glow (克制微动)
+  var hero=document.getElementById('hero'),glow=document.getElementById('pglow');
+  hero.addEventListener('pointermove',function(ev){var r=hero.getBoundingClientRect();glow.style.left=(ev.clientX-r.left)+'px';glow.style.top=(ev.clientY-r.top)+'px'});
+
+  // scope canvas waveform
+  var cv=document.getElementById('scope'),ctx=cv.getContext('2d'),W=0,H=0,dpr=Math.min(2,devicePixelRatio||1);
+  function sizeScope(){var r=hero.getBoundingClientRect();W=cv.width=Math.floor(r.width*dpr);H=cv.height=Math.floor(r.height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0)}
+  addEventListener('resize',sizeScope);sizeScope();
+  var t=0,reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function css(v){return getComputedStyle(root).getPropertyValue(v).trim()}
+  function drawScope(){
+    ctx.clearRect(0,0,cv.width/dpr,cv.height/dpr);
+    var cy0=cv.height/dpr*0.62,col=css('--cyan'),amp=Math.sin(t*0.017)*14;
+    ctx.strokeStyle=col;ctx.globalAlpha=0.16;ctx.lineWidth=1;
+    for(var x=0;x<cv.width/dpr;x+=3){
+      var n=Math.sin(x*0.021+t*0.05)*6+Math.sin(x*0.005-t*0.02)*8+Math.sin(x*0.09+t*0.03)*2;
+      var y=cy0+n*(1+amp/18);
+      if(x===0){ctx.beginPath();ctx.moveTo(x,y)}else{ctx.lineTo(x,y)}
+    }
+    ctx.stroke();
+    ctx.globalAlpha=0.08;ctx.strokeStyle=css('--violet');ctx.beginPath();
+    for(var x2=0;x2<cv.width/dpr;x2+=4){var y2=cy0+46+Math.sin(x2*0.013-t*0.033)*10;x2===0?ctx.moveTo(x2,y2):ctx.lineTo(x2,y2)}ctx.stroke();
+    ctx.globalAlpha=1;
+    if(!reduce){t+=1;requestAnimationFrame(drawScope)}
+  }
+  drawScope();
+
+  // star map
+  var sm=document.getElementById('starmap'),sc=sm.querySelector('canvas'),sx=sc.getContext('2d'),SW=0,SH=0;
+  function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;var x=Math.imul(a^a>>>15,1|a);x=x+Math.imul(x^x>>>7,61|x)^x;return((x^x>>>14)>>>0)/4294967296}}
+  function sizeStars(){var r=sm.getBoundingClientRect();SW=sc.width=Math.floor(r.width*dpr);SH=sc.height=Math.floor(r.height*dpr);sx.setTransform(dpr,0,0,dpr,0,0);paintStars()}
+  function paintStars(){
+    sx.clearRect(0,0,SW,SH);
+    var rnd=mulberry(20261109);
+    for(var i=0;i<135;i++){
+      var b=Math.min(4,Math.floor(i/27));
+      var zoneL=[0,0.24,0.50,0.68,0.84][b],zoneW=[0.20,0.24,0.16,0.14,0.15][b];
+      var x=(zoneL+rnd()*zoneW)*SW;
+      var y=22+rnd()*(SH-40);
+      var big=(i%11===0);
+      var r2=big?2.4:0.8+rnd()*1.4;
+      sx.globalAlpha=big?0.95:0.35+rnd()*0.4;
+      sx.fillStyle=big?'#a78bfa':(rnd()>0.5?'#d7e2f0':'#3fd0e0');
+      sx.beginPath();sx.arc(x,y,r2,0,7);sx.fill();
+    }
+    sx.globalAlpha=1;
+  }
+  addEventListener('resize',sizeStars);sizeStars();
+})();
+</script>
+</body>
+</html>
